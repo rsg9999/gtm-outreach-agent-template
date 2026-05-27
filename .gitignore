@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.python-version
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+.env
+.env.local
+credentials/
+*.pem
+*.key
+
+# Per-user data — never commit, friend generates these locally
+# Profile/ holds the friend's voice/resume/proof-points pack;
+# the public template ships Profile.example/ as a reference.
+Profile/
+state/runs/*.json
+!state/.gitkeep
+logs/
+
+# Per-user Claude Code state
+.claude/settings.local.json
+.claude-memory/
+
+# Optional local privacy denylist. Add your own names, handles, schools,
+# employers, domains, or other markers here before publishing.
+.privacy-denylist.txt
+
+# Editor backups
+*~
+*.bak
+
+# Pre-publish helper (local-only — never commit)
+CHECKLIST.md

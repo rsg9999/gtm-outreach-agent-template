@@ -1,0 +1,34 @@
+# Per-user voice rules consumed by src/lib/voice_rules.py.
+#
+# Universal AI tells (em dashes, "leverage", "I am writing to", "Best regards", etc.)
+# are baked into voice_rules.UNIVERSAL_BANNED_PHRASES and ALWAYS enforced.
+# The list below ADDS to that — your personal banned phrases.
+
+signature: "Alex"
+
+# Phrases that should never appear in your drafts. Edit freely.
+banned_phrases:
+  - "if you have a minute"
+  - "no worries if not"
+  - "let me know your availability"
+  - "I think that"
+  - "maps well"
+  - "want to reach out"
+  - "Quick context"
+  - "Quick note"
+  - "is exactly the kind of work"
+
+# Regex patterns for subject-line anti-patterns (case-insensitive).
+# (Patterns like "^application for " and "^exploring opportunities" are
+# already universal and don't need to be repeated here.)
+banned_subject_patterns: []
+
+# Email body word-count window. The drafter targets this range.
+body_word_min: 50
+body_word_max: 110
+
+# LinkedIn surface caps.
+li_connect_max_chars: 300
+li_dm_max_chars: 500
+li_inmail_subject_max: 200
+li_inmail_body_max: 1500

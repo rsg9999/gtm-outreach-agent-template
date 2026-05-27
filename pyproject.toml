@@ -1,0 +1,48 @@
+[project]
+name = "gtm-outreach-agent"
+version = "0.1.0"
+authors = [{name = "rsg9999"}]
+description = "Local CLI agent that researches jobs, drafts personalized outreach in your voice, stages Gmail drafts, and logs to Google Sheets."
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.2.0",
+    "google-api-python-client>=2.130.0",
+    "google-auth>=2.30.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth-oauthlib>=1.2.0",
+    "python-dotenv>=1.0.1",
+    "click>=8.1.7",
+    "pydantic>=2.7.0",
+    "pytz>=2024.1",
+    "tzdata>=2024.1",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+apply = "src.apply:main"
+run-loop = "src.loop:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.5.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

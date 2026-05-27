@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template launchd job for the GTM Outreach Agent loop.
+
+  To install (replace REPO_PATH with the absolute path to this repo, including any spaces — keep the quotes):
+
+    1. Copy this file to ~/Library/LaunchAgents/com.gtm-outreach-agent.plist
+    2. Edit the path placeholders (REPO_PATH, UV_PATH).
+    3. launchctl load ~/Library/LaunchAgents/com.gtm-outreach-agent.plist
+    4. Tail logs: tail -f "REPO_PATH/logs/agent.log"
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gtm-outreach-agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd "REPO_PATH" &amp;&amp; UV_PATH run python -m src.loop &gt;&gt; "REPO_PATH/logs/agent.log" 2&gt;&amp;1</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>REPO_PATH/logs/launchd.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>REPO_PATH/logs/launchd.err</string>
+</dict>
+</plist>
