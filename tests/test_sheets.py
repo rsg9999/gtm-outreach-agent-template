@@ -26,7 +26,7 @@ def _row() -> StagedRow:
         linkedin="https://www.linkedin.com/in/javery/",
         next_action_date=datetime(2026, 5, 6, 7, 30),
         gmail_draft_id="draft_123",
-        linkedin_connection_note="Saw you went agency to infra. Want to connect.",
+        linkedin_connection_note="Saw your post on growth. Want to connect.",
         linkedin_dm="DM body...",
     )
 

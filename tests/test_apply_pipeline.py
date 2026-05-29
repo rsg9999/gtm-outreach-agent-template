@@ -31,12 +31,12 @@ def _fake_email_li() -> tuple[EmailDraft, LinkedInDraft]:
     return (
         EmailDraft(
             subject="the growth role at Acme",
-            body="Hi Jordan,\n\nJust applied. At Acme Labs I built ARR from zero, $4M pipeline. Would love 15 min.\n\nAlex",
+            body="Hi Jordan,\n\nJust applied. At Acme Labs I built the self-serve funnel from zero to 10k signups. Would love 15 min.\n\nAlex",
             word_count=22,
         ),
         LinkedInDraft(
             connection_note="Saw your post. Builder, GTM operator. Would love to connect.",
-            dm="Thanks for connecting. Saw your post. At Acme Labs I built ARR from zero, $4M pipeline. Would love 15 min.",
+            dm="Thanks for connecting. Saw your post. At Acme Labs I built the self-serve funnel from zero to 10k signups. Would love 15 min.",
         ),
     )
 
