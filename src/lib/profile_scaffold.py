@@ -82,13 +82,13 @@ def gather_inputs() -> dict[str, str]:
     pitch = _prompt_short("Your one-line pitch (e.g. 'PM-turned-founder applying to seed-stage AI companies')")
     target = _prompt_short("Target roles / industries (e.g. 'Head of Growth at AI/dev-tools companies, 20-200 employees')")
     wins = _prompt_short(
-        "2-3 recent wins, with numbers (e.g. 'shipped onboarding v2, activation 41%->58%; built new vertical to $4M pipeline')"
+        "2-3 recent wins, with numbers (e.g. 'cut onboarding time 30%; grew signups from 0 to 10k in a year')"
     )
     voice_style = _prompt_short(
         "Voice description in 5-10 words (e.g. 'concise, direct, builder energy, light self-deprecation')"
     )
     stories = _prompt_short(
-        "1-2 short story summaries that explain why you do what you do (e.g. 'scaled an agency to $800K then sold it because...')"
+        "1-2 short story summaries that explain why you do what you do (e.g. 'left a steady job to build something of my own because...')"
     )
     resume = _read_multiline("Paste your resume now (markdown or plain text)")
     if not resume:

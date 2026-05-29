@@ -20,7 +20,7 @@ from src.lib.voice_rules import VoiceConfig
 _STUB_PROFILE_PACK = profile_module.ProfilePack(
     resume="# Stub Resume\nFictional persona for tests. Built things, shipped things.",
     voice="# Stub Voice\n- Short. 50-110 words.\n- Sign off with the configured signature.",
-    proof_points="- Built a new vertical from scratch, $4M pipeline.\n- Closed $1.5M+ TCV in nine months.",
+    proof_points="- Built a self-serve funnel from scratch.\n- Grew signups from zero to 10k in a year.",
     past_drafts="# Past drafts (stub)\n\n*Email 1*\nHi NAME,\n\nApplied today. Built X. Would love 15 min.\n\nAlex",
     narrative="# Narrative (stub)\nBuilder who likes building zero-to-one teams.",
 )

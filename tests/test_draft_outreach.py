@@ -20,9 +20,9 @@ from src.lib.voice_rules import VoiceConfig
 def _li_block() -> str:
     return (
         '"linkedin": {'
-        '"connection_note": "Saw your post on LinkedIn about the role. Ex-founder, GTM operator. Would love to connect.", '
-        '"dm": "Thanks for connecting. Saw your post about the role. At Acme Labs I built a new vertical from zero, '
-        '$4M pipeline and $1.5M+ TCV closed in 9 months. Would love 15 min if you are open."'
+        '"connection_note": "Saw your post on LinkedIn about the role. Builder, GTM operator. Would love to connect.", '
+        '"dm": "Thanks for connecting. Saw your post about the role. At Acme Labs I built the self-serve funnel from zero '
+        'to 10k signups. Would love 15 min if you are open."'
         '}'
     )
 
@@ -32,7 +32,7 @@ def _make_job() -> ParsedJob:
         company_name="Acme",
         company_domain="acme.example",
         role_title="Growth Marketing Manager",
-        location="NYC",
+        location="Remote",
         jd_body="Hire a growth marketer who can run paid, SEO, and PLG. Technical, SQL, A/B tests.",
         job_url="https://jobs.example.com/acme/growth",
         source_site="ashby",
@@ -118,7 +118,7 @@ def test_parse_outreach_response_extracts_email_and_linkedin():
     assert "Hi Jordan" in email.body
     assert email.word_count > 0
     assert li.connection_note.startswith("Saw your post")
-    assert "$4M" in li.dm
+    assert "10k signups" in li.dm
 
 
 def test_parse_outreach_response_strips_fences():
@@ -137,8 +137,9 @@ def test_draft_outreach_jd_mode_passes_voice_rules(monkeypatch):
     fake_response = (
         '{"email": {"subject": "the growth role at Acme", "body": '
         '"Hi Jordan,\\n\\nJust applied for the Growth Marketing Manager role at Acme. '
-        'At Acme Labs I built the new vertical from zero, $4M pipeline and $1.5M+ TCV closed in nine months '
-        'using Clay and event signals. Would love 15 min if you are open. Happy to send a Loom of one of the systems first.\\n\\n'
+        'At Acme Labs I built the self-serve funnel from zero to 10k signups, then ran the lifecycle and paid '
+        'experiments end to end to keep activation climbing quarter over quarter. The JD reads like that exact '
+        'playbook, so the timing felt worth a note. Would love 15 min if you are open. Happy to send a Loom of one of the systems first.\\n\\n'
         'Alex"}, '
         + _li_block()
         + '}'
@@ -165,7 +166,7 @@ def test_draft_outreach_voice_failure_triggers_regen(monkeypatch):
     )
     good = (
         '{"email": {"subject": "the growth role at Acme", "body": "Hi Jordan,\\n\\nApplied today for the Growth Marketing Manager role at Acme. '
-        'At Acme Labs I shipped the new vertical from zero to $4M pipeline and $1.5M+ TCV closed in nine months running signal-based outbound. '
+        'At Acme Labs I shipped the self-serve funnel from zero to 10k signups and ran the lifecycle experiments that kept activation climbing every quarter. '
         'The JD reads like that exact playbook. Would love 15 min if you are open.\\n\\nAlex"}, '
         + _li_block()
         + '}'
