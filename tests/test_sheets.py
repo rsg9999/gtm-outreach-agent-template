@@ -12,6 +12,8 @@ from src.lib.sheets import (
     append_row,
     ensure_headers,
     ensure_step7_headers,
+    read_queue,
+    update_row,
 )
 
 
@@ -199,3 +201,79 @@ def test_ensure_step7_headers_noop_when_already_full(monkeypatch):
     )
     ensure_step7_headers()
     assert not called["yes"]
+
+
+# --------------------------------------------------------------------------- #
+# read_queue + update_row (Task 3)                                            #
+# --------------------------------------------------------------------------- #
+
+def _full_row_values(overrides=None):
+    """Build a values list matching SHEET_HEADERS for a single sheet row."""
+    base = {h: "" for h in SHEET_HEADERS}
+    base.update({
+        "Date Added": "2026-05-05T10:00",
+        "Company": "Acme",
+        "Role": "Growth Marketing Manager",
+        "Contact Name": "Jordan Avery",
+        "Email": "jordan@acme.example",
+        "Status": "Drafted",
+        "Gmail Draft ID": "draft_1",
+    })
+    base.update(overrides or {})
+    return [base[h] for h in SHEET_HEADERS]
+
+
+def test_read_queue_parses_rows_with_numbers(monkeypatch):
+    fake_service = MagicMock()
+    fake_service.spreadsheets().values().get().execute.return_value = {
+        "values": [list(SHEET_HEADERS), _full_row_values()]
+    }
+    monkeypatch.setattr("src.lib.sheets._get_sheets_service", lambda: fake_service)
+    monkeypatch.setattr(
+        "src.lib.sheets.load_config",
+        lambda: type("C", (), {"sheet_id": "abc", "sheet_tab_name": "Outreach", "step7_sheet_tab": "Outreach"})(),
+    )
+    rows = read_queue()
+    assert len(rows) == 1
+    row_number, row = rows[0]
+    assert row_number == 2  # row 1 is headers, data starts at 2
+    assert row.company == "Acme"
+    assert row.email == "jordan@acme.example"
+    assert row.gmail_draft_id == "draft_1"
+
+
+def test_read_queue_skips_blank_rows(monkeypatch):
+    fake_service = MagicMock()
+    fake_service.spreadsheets().values().get().execute.return_value = {
+        "values": [list(SHEET_HEADERS), [""] * len(SHEET_HEADERS), _full_row_values()]
+    }
+    monkeypatch.setattr("src.lib.sheets._get_sheets_service", lambda: fake_service)
+    monkeypatch.setattr(
+        "src.lib.sheets.load_config",
+        lambda: type("C", (), {"sheet_id": "abc", "sheet_tab_name": "Outreach", "step7_sheet_tab": "Outreach"})(),
+    )
+    rows = read_queue()
+    assert [n for n, _ in rows] == [3]  # blank row 2 skipped
+
+
+def test_update_row_batches_named_columns(monkeypatch):
+    fake_service = MagicMock()
+    captured = {}
+
+    def fake_batch(spreadsheetId, body):
+        captured["body"] = body
+        return MagicMock(execute=lambda: {})
+
+    fake_service.spreadsheets().values().batchUpdate.side_effect = fake_batch
+    monkeypatch.setattr("src.lib.sheets._get_sheets_service", lambda: fake_service)
+    monkeypatch.setattr(
+        "src.lib.sheets.load_config",
+        lambda: type("C", (), {"sheet_id": "abc", "sheet_tab_name": "Outreach", "step7_sheet_tab": "Outreach"})(),
+    )
+    from datetime import datetime
+    update_row(2, {"Status": "Email 1 Sent", "Email 1 Sent": datetime(2026, 5, 6, 8, 0), "Follow-up Sent?": True})
+    data = captured["body"]["data"]
+    ranges = {d["range"]: d["values"][0][0] for d in data}
+    assert ranges["Outreach!I2"] == "Email 1 Sent"      # Status is column I (index 8)
+    assert "2026-05-06" in ranges["Outreach!M2"]         # Email 1 Sent is column M (index 12)
+    assert ranges["Outreach!AE2"] == "Yes"               # Follow-up Sent? is index 30 -> AE
