@@ -57,6 +57,44 @@ def load_profile() -> ProfilePack:
     )
 
 
+@dataclass
+class ThreadPack:
+    """Profile context for reply/follow-up drafting: thread voice + factual files.
+
+    Deliberately EXCLUDES voice.md and past_drafts.md (cold-email voice) to avoid
+    polluting the warmer thread tone.
+    """
+
+    thread_voice: str
+    thread_drafts: str
+    resume: str
+    proof_points: str
+    narrative: str
+
+    def as_prompt_block(self) -> str:
+        return (
+            "THREAD VOICE\n============\n" + self.thread_voice
+            + "\n\nEXAMPLE REPLIES\n===============\n" + self.thread_drafts
+            + "\n\nRESUME (facts only)\n===================\n" + self.resume
+            + "\n\nPROOF POINTS (facts only, use at most one light detail)\n"
+            + "======================================================\n" + self.proof_points
+            + "\n\nNARRATIVE (facts only)\n======================\n" + self.narrative
+        )
+
+
+@lru_cache(maxsize=1)
+def load_thread_pack() -> ThreadPack:
+    cfg = load_config()
+    pdir = cfg.profile_dir
+    return ThreadPack(
+        thread_voice=_read(pdir, "thread_voice.md"),
+        thread_drafts=_read(pdir, "thread_drafts.md"),
+        resume=_read(pdir, "resume.md"),
+        proof_points=_read(pdir, "proof_points.md"),
+        narrative=_read(pdir, "narrative.md"),
+    )
+
+
 def parse_followup_pools(text: str) -> dict[str, list[str]]:
     """Parse a thread_followups.md into {'followup_1': [...], 'followup_2': [...]}.
 
