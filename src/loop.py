@@ -1,12 +1,8 @@
-"""`run-loop` command: invoked by launchd every 30 minutes.
+"""`run-loop`: one idempotent Step 7 tick. NEVER sends; only drafts().create.
 
-Each tick:
-  1. Read Sheet for rows where Next Action Date <= now and Status not in {Replied, Closed}.
-  2. For rows in send window, send queued Gmail draft (with 5-15 min jitter applied at draft-stage time).
-  3. After send: update Status, Last Action Date, schedule next follow-up if applicable.
-  4. Check Gmail for replies on threads we've sent; mark Replied + Slack alert + stop sequence.
-  5. Draft any due follow-ups (D+4 from Email 1 sent, D+5 from Email 2 sent) and stage as Gmail drafts.
-  6. At 8am local: post a daily Slack digest (sent / replied / queued today).
+Each row: cache the draft subject, detect a manual send via the Gmail API, record it
+and schedule the next follow-up, then stage a due follow-up as a reply draft. Per-row
+errors are isolated to the row's Step7 Error column so one bad row can't crash the tick.
 """
 from __future__ import annotations
 
@@ -16,10 +12,28 @@ from datetime import datetime, timedelta
 
 import click
 
+from src.lib.config import load_config
+from src.lib.followups import select_bump
+from src.lib.gmail import create_reply_draft, get_draft_subject, _get_gmail_service
 from src.lib.models import StagedRow
-from src.lib.send_detect import SendEvent
+from src.lib.profile import load_followup_pools
+from src.lib.send_detect import PollingSendDetector, SendEvent
+from src.lib.sheets import ensure_step7_headers, read_queue, update_row
 
 log = logging.getLogger(__name__)
+
+_TERMINAL_STATUSES = {"Replied", "Closed", "Done"}
+
+
+def _gmail_service():
+    """Indirection so tests patch this instead of the network."""
+    return _get_gmail_service()
+
+
+def make_detector():
+    """The Phase-1 detector. Swap for PushSendDetector later without touching the loop."""
+    return PollingSendDetector()
+
 
 _STEP_SENT_COLUMN = {"email_1": "Email 1 Sent", "followup_1": "Email 2 Sent", "followup_2": "Email 3 Sent"}
 _STEP_STATUS = {"email_1": "Email 1 Sent", "followup_1": "Follow-up 1 Sent", "followup_2": "Follow-up 2 Sent"}
@@ -73,13 +87,89 @@ def followup_due(row: StagedRow, *, now: datetime) -> bool:
     return True
 
 
+def _cache_subject_fields(row: StagedRow, service) -> dict:
+    """If the first-email draft is still around and its subject isn't cached, cache it."""
+    if row.email_1_sent is None and row.gmail_draft_id and not row.gmail_subject:
+        subject = get_draft_subject(row.gmail_draft_id, service=service)
+        if subject:
+            row.gmail_subject = subject  # so detection later this tick can use it
+            return {"Gmail Subject": subject}
+    return {}
+
+
+def _stage_followup_fields(row: StagedRow, pools: dict, service) -> dict:
+    """Stage a follow-up reply draft and return the field change. Caller checks due-ness."""
+    step = followup_step(row)
+    pool = pools.get(step or "", [])
+    if not pool:
+        return {"Step7 Error": f"empty follow-up pool for {step}"}
+    body = select_bump(pool, row.email or row.contact_name, step)
+    draft_id = create_reply_draft(
+        thread_id=row.gmail_thread_id,
+        to=row.email,
+        subject=row.gmail_subject or row.role,
+        body=body,
+        in_reply_to=None,
+        references=None,
+        service=service,
+    )
+    return {"Followup Draft ID": draft_id, "Next Action": f"Send {step.replace('_', ' ').title()}"}
+
+
+def run_tick(*, now: datetime | None = None, dry_run: bool = False) -> None:
+    now = now or datetime.now()
+    cfg = load_config()
+    service = _gmail_service()
+    detector = make_detector()
+    pools = load_followup_pools() if cfg.enable_followups else {}
+
+    for row_number, row in read_queue():
+        if row.status in _TERMINAL_STATUSES or row.replied:
+            continue
+        changed: dict = {}
+        try:
+            changed.update(_cache_subject_fields(row, service))
+            event: SendEvent | None = detector.detect(row, service)
+            if event is not None:
+                changed.update(record_send_fields(row, event, cfg))
+                # reflect the send on the in-memory row so we don't also stage this tick
+                _apply_to_row(row, event)
+            if cfg.enable_followups and followup_due(row, now=now):
+                changed.update(_stage_followup_fields(row, pools, service))
+        except Exception as exc:  # isolate the row, keep the tick going
+            changed = {"Step7 Error": f"{type(exc).__name__}: {exc}"[:300]}
+            log.warning("row %d failed: %s", row_number, exc)
+        if changed:
+            if dry_run:
+                click.echo(f"[dry-run] row {row_number}: {changed}")
+            else:
+                update_row(row_number, changed)
+
+
+def _apply_to_row(row: StagedRow, event: SendEvent) -> None:
+    """Mirror a detected send onto the in-memory row so follow-up logic sees fresh state."""
+    setattr(row, {"email_1": "email_1_sent", "followup_1": "email_2_sent", "followup_2": "email_3_sent"}[event.step], event.sent_at)
+    if event.step == "email_1":
+        row.gmail_message_id = event.message_id
+        row.gmail_thread_id = event.thread_id
+        row.gmail_draft_id = None
+    else:
+        row.followup_draft_id = None
+    row.last_gmail_message_id = event.message_id
+
+
 @click.command()
-@click.option("--dry-run", is_flag=True, default=False, help="Print actions instead of sending or writing.")
-def main(dry_run: bool) -> None:
-    """One tick of the send/reply/follow-up loop."""
+@click.option("--dry-run", is_flag=True, default=False, help="Print planned writes; change nothing.")
+@click.option("--init-headers", is_flag=True, default=False, help="Add the Step 7 columns to the tab, then exit.")
+def main(dry_run: bool, init_headers: bool) -> None:
+    """One tick of the Step 7 send-detection + follow-up loop. Never sends."""
     logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+    if init_headers:
+        ensure_step7_headers()
+        click.echo("Step 7 headers ensured.")
+        sys.exit(0)
     log.info("run-loop tick: dry_run=%s", dry_run)
-    click.echo("run-loop: scaffold present. Behaviors will be implemented in Step 7.")
+    run_tick(dry_run=dry_run)
     sys.exit(0)
 
 
