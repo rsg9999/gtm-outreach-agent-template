@@ -131,6 +131,21 @@ def test_tick_stages_due_followup(monkeypatch):
     assert merged["Followup Draft ID"] == "fdraft_new"
 
 
+def test_tick_does_not_stage_followup_same_tick_as_send(monkeypatch):
+    """Regression: a row carrying Phase 3's already-past next_action_date must NOT have
+    its follow-up bump staged in the same tick its email-1 send is detected."""
+    from src.lib.send_detect import SendEvent
+    row = _row(next_action_date=datetime(2026, 5, 5, 7, 0))  # Phase 3 send slot, already past
+    ev = SendEvent(message_id="m1", thread_id="t1", sent_at=datetime(2026, 5, 6, 8, 0), step="email_1")
+    updates, staged = _patch_loop(monkeypatch, [(2, row)], detector_event=ev)
+    loop_mod.run_tick(now=datetime(2026, 5, 6, 9, 0), dry_run=False)
+    assert staged == []  # no follow-up draft staged this tick
+    merged = {k: v for _, f in updates for k, v in f.items()}
+    assert merged["Status"] == "Email 1 Sent"
+    assert merged["Next Action Date"] == datetime(2026, 5, 10, 8, 0)  # sent + 4 days
+    assert "Followup Draft ID" not in merged
+
+
 def test_tick_isolates_row_errors(monkeypatch):
     updates, staged = _patch_loop(monkeypatch, [(2, _row())], detector_exc=RuntimeError("boom"))
     loop_mod.run_tick(now=datetime(2026, 5, 6, 9, 0), dry_run=False)
