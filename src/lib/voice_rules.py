@@ -162,6 +162,25 @@ def _flag_banned(text: str, config: VoiceConfig, failures: list[str]) -> None:
             failures.append(f"contains banned phrase: {phrase!r}")
 
 
+REPLY_WORD_MIN = 20
+REPLY_WORD_MAX = 100
+
+
+def check_reply(text: str, *, config: VoiceConfig) -> VoiceCheckResult:
+    """Gate for reply drafts: 20-100 words, no em dash, no banned phrases. No signature rule."""
+    failures: list[str] = []
+    stripped = text.strip()
+    if "—" in stripped:
+        failures.append("contains em dash (—); use periods or commas")
+    _flag_banned(stripped, config, failures)
+    words = len(stripped.split())
+    if words < REPLY_WORD_MIN:
+        failures.append(f"body is {words} words; must be at least {REPLY_WORD_MIN}")
+    if words > REPLY_WORD_MAX:
+        failures.append(f"body is {words} words; must be at most {REPLY_WORD_MAX}")
+    return VoiceCheckResult(ok=not failures, failures=failures)
+
+
 def check_li_connect(text: str, *, config: VoiceConfig) -> VoiceCheckResult:
     failures: list[str] = []
     if len(text) >= config.li_connect_max_chars:

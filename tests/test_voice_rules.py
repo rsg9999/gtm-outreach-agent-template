@@ -5,6 +5,8 @@ so tests stay deterministic and don't depend on a Profile/ directory existing.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.lib.voice_rules import (
@@ -12,6 +14,8 @@ from src.lib.voice_rules import (
     check_email,
     check_li_connect,
     check_li_dm,
+    check_reply,
+    load_voice_config,
 )
 
 
@@ -129,3 +133,24 @@ def test_universal_banned_phrases_flagged_even_without_personal_config():
     res = check_email("subject", body, config=minimal)
     assert not res.ok
     assert any("looking forward" in f.lower() for f in res.failures)
+
+
+def _cfg():
+    return load_voice_config(Path("Profile.example"))
+
+
+def test_check_reply_accepts_clean_short_reply():
+    text = ("Tuesday or Thursday afternoon both work my end. Want me to send a calendar "
+            "invite, or easier to grab fifteen minutes off a Loom I can record first?")
+    assert check_reply(text, config=_cfg()).ok
+
+
+def test_check_reply_rejects_too_short():
+    res = check_reply("Sounds good.", config=_cfg())
+    assert not res.ok
+    assert any("word" in f.lower() for f in res.failures)
+
+
+def test_check_reply_rejects_em_dash_and_banned():
+    res = check_reply("I would love to leverage this opportunity " * 6, config=_cfg())
+    assert not res.ok
