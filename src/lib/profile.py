@@ -55,3 +55,28 @@ def load_profile() -> ProfilePack:
         past_drafts=_read(pdir, "past_drafts.md"),
         narrative=_read(pdir, "narrative.md"),
     )
+
+
+def parse_followup_pools(text: str) -> dict[str, list[str]]:
+    """Parse a thread_followups.md into {'followup_1': [...], 'followup_2': [...]}.
+
+    '## Email 2' -> followup_1 (first bump), '## Email 3' -> followup_2 (final note).
+    Lines starting with '- ' are pool entries.
+    """
+    section_map = {"email 2": "followup_1", "email 3": "followup_2"}
+    pools: dict[str, list[str]] = {"followup_1": [], "followup_2": []}
+    current: str | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("##"):
+            current = section_map.get(line.lstrip("#").strip().lower())
+        elif line.startswith("- ") and current:
+            pools[current].append(line[2:].strip())
+    return pools
+
+
+def load_followup_pools() -> dict[str, list[str]]:
+    """Load the per-user bump pool from Profile/thread_followups.md."""
+    cfg = load_config()
+    text = _read(cfg.profile_dir, "thread_followups.md")
+    return parse_followup_pools(text)

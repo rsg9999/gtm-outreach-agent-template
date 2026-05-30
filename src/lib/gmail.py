@@ -5,6 +5,7 @@ import base64
 import html
 import logging
 import mimetypes
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -129,3 +130,90 @@ def send_draft(draft_id: str) -> str:
 def has_reply(thread_id: str, our_address: str) -> bool:
     """Step 7. Placeholder."""
     raise NotImplementedError("has_reply is implemented in Step 7.")
+
+
+# --------------------------------------------------------------------------- #
+# Step 7 Gmail fetch primitives                                               #
+# --------------------------------------------------------------------------- #
+
+def list_draft_ids(service=None) -> set[str]:
+    """All current Gmail draft IDs for the user (paginated)."""
+    service = service or _get_gmail_service()
+    ids: set[str] = set()
+    token = None
+    while True:
+        resp = service.users().drafts().list(userId="me", pageToken=token).execute()
+        ids.update(d["id"] for d in resp.get("drafts", []))
+        token = resp.get("nextPageToken")
+        if not token:
+            return ids
+
+
+def _header(headers: list[dict], name: str) -> str | None:
+    for h in headers:
+        if h.get("name", "").lower() == name.lower():
+            return h.get("value")
+    return None
+
+
+def get_draft_subject(draft_id: str, service=None) -> str | None:
+    """Subject of a staged draft, cached before the draft can disappear on send."""
+    service = service or _get_gmail_service()
+    resp = service.users().drafts().get(userId="me", id=draft_id, format="metadata").execute()
+    headers = resp.get("message", {}).get("payload", {}).get("headers", [])
+    return _header(headers, "Subject")
+
+
+def get_message_meta(message_id: str, service=None) -> dict:
+    """Lightweight message metadata: ids + naive-local sent datetime + Message-ID header."""
+    service = service or _get_gmail_service()
+    resp = service.users().messages().get(
+        userId="me", id=message_id, format="metadata",
+        metadataHeaders=["Message-ID", "Subject", "From", "To"],
+    ).execute()
+    internal_ms = int(resp.get("internalDate", "0"))
+    headers = resp.get("payload", {}).get("headers", [])
+    return {
+        "message_id": resp.get("id", message_id),
+        "thread_id": resp.get("threadId"),
+        "internal_date": datetime.fromtimestamp(internal_ms / 1000),
+        "rfc_message_id": _header(headers, "Message-ID"),
+    }
+
+
+def search_sent(to: str, subject: str | None, after: datetime | None = None, service=None) -> list[str]:
+    """Message IDs in Sent matching recipient (+ optional subject, + optional after-date)."""
+    service = service or _get_gmail_service()
+    q = f"in:sent to:{to}"
+    if subject:
+        q += f' subject:"{subject}"'
+    if after:
+        q += f" after:{after:%Y/%m/%d}"
+    resp = service.users().messages().list(userId="me", q=q).execute()
+    return [m["id"] for m in resp.get("messages", [])]
+
+
+def create_reply_draft(
+    *, thread_id: str, to: str, subject: str, body: str,
+    in_reply_to: str | None = None, references: str | None = None, service=None,
+) -> str:
+    """Stage a reply draft inside an existing thread. NEVER sends. Returns the draft ID."""
+    service = service or _get_gmail_service()
+    cfg = load_config()
+    reply_subject = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    msg = EmailMessage()
+    msg["To"] = to
+    msg["From"] = cfg.sender_email
+    msg["Subject"] = reply_subject
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+    if references:
+        msg["References"] = references
+    msg.set_content(_plain_to_html(body), subtype="html")
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+    result = service.users().drafts().create(
+        userId="me", body={"message": {"raw": raw, "threadId": thread_id}}
+    ).execute()
+    draft_id = result["id"]
+    log.info("Gmail follow-up reply draft staged: id=%s thread=%s to=%s", draft_id, thread_id, to)
+    return draft_id

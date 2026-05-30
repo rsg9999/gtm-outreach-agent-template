@@ -162,3 +162,76 @@ def test_stage_draft_attaches_resume_from_config(monkeypatch, tmp_path):
     decoded = base64.urlsafe_b64decode(captured["raw"].encode()).decode()
     assert 'filename="resume.pdf"' in decoded
     assert "Content-Type: application/pdf" in decoded
+
+
+# --------------------------------------------------------------------------- #
+# Step 7 Gmail fetch primitives                                               #
+# --------------------------------------------------------------------------- #
+
+def test_list_draft_ids_collects_ids(monkeypatch):
+    from src.lib import gmail
+    svc = MagicMock()
+    svc.users().drafts().list().execute.return_value = {"drafts": [{"id": "d1"}, {"id": "d2"}]}
+    assert gmail.list_draft_ids(service=svc) == {"d1", "d2"}
+
+
+def test_get_draft_subject_reads_subject_header(monkeypatch):
+    from src.lib import gmail
+    svc = MagicMock()
+    svc.users().drafts().get().execute.return_value = {
+        "message": {"payload": {"headers": [{"name": "Subject", "value": "the growth role at Acme"}]}}
+    }
+    assert gmail.get_draft_subject("d1", service=svc) == "the growth role at Acme"
+
+
+def test_get_message_meta_parses_thread_and_date(monkeypatch):
+    from src.lib import gmail
+    svc = MagicMock()
+    svc.users().messages().get().execute.return_value = {
+        "id": "m1", "threadId": "t1", "internalDate": "1778054400000"  # 2026-05-06 08:00 UTC
+    }
+    meta = gmail.get_message_meta("m1", service=svc)
+    assert meta["message_id"] == "m1"
+    assert meta["thread_id"] == "t1"
+    assert meta["internal_date"].year == 2026
+
+
+def test_search_sent_returns_message_ids(monkeypatch):
+    from src.lib import gmail
+    from datetime import datetime
+    svc = MagicMock()
+    captured = {}
+
+    def fake_list(userId, q, **kw):
+        captured["q"] = q
+        return MagicMock(execute=lambda: {"messages": [{"id": "m1"}, {"id": "m2"}]})
+
+    svc.users().messages().list.side_effect = fake_list
+    ids = gmail.search_sent("jordan@acme.example", "the growth role at Acme",
+                            after=datetime(2026, 5, 5), service=svc)
+    assert ids == ["m1", "m2"]
+    assert "in:sent" in captured["q"]
+    assert "jordan@acme.example" in captured["q"]
+    assert "2026/05/05" in captured["q"]
+
+
+def test_create_reply_draft_threads_and_returns_id(monkeypatch):
+    from src.lib import gmail
+    svc = MagicMock()
+    captured = {}
+
+    def fake_create(userId, body):
+        captured["body"] = body
+        return MagicMock(execute=lambda: {"id": "fdraft_1"})
+
+    svc.users().drafts().create.side_effect = fake_create
+    monkeypatch.setattr("src.lib.gmail.load_config",
+                        lambda: type("C", (), {"sender_email": "you@example.com", "resume_path": __import__("pathlib").Path("/nope")})())
+    draft_id = gmail.create_reply_draft(
+        thread_id="t1", to="jordan@acme.example", subject="the growth role at Acme",
+        body="just bumping this up for you.", in_reply_to="<m1@mail>", references="<m1@mail>",
+        service=svc,
+    )
+    assert draft_id == "fdraft_1"
+    assert captured["body"]["message"]["threadId"] == "t1"
+    assert "raw" in captured["body"]["message"]

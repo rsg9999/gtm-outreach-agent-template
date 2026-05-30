@@ -42,7 +42,7 @@ def _config(signature: str = "Alex") -> VoiceConfig:
 # Body that satisfies non-phrase checks: ~90 words, no em dashes, signs off with the signature.
 def _good_body(extra_phrase: str = "", signature: str = "Alex") -> str:
     sentence = (
-        f"{extra_phrase} I built a new vertical from scratch and ran the GTM motion end to end."
+        f"{extra_phrase} I built the self-serve funnel from scratch and ran the lifecycle program end to end."
     ).strip()
     body = " ".join([sentence] * 6) + f"\n\n{signature}"
     words = body.split()
@@ -107,8 +107,8 @@ def test_existing_past_drafts_phrasing_still_passes():
     body_with_15min = _good_body("Would love 15 min if you're open.")
     assert check_email("subject", body_with_15min, config=_config()).ok
 
-    body_with_ex_founder = _good_body("I'm an ex-founder who scaled an agency to $800K.")
-    assert check_email("subject", body_with_ex_founder, config=_config()).ok
+    body_with_extra = _good_body("I previously shipped three products from zero.")
+    assert check_email("subject", body_with_extra, config=_config()).ok
 
 
 def test_signature_is_configurable():

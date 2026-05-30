@@ -130,7 +130,7 @@ def test_extract_jd_payload_pulls_ashby_descriptionhtml():
         '{"a":1,"posting":{"title":"GTM Engineer","descriptionHtml":'
         '"<p><strong>About RelayCo</strong></p><p>RelayCo is infrastructure for sending A2P messages.</p>'
         '<ul><li>Own the funnel</li></ul>",'
-        '"locationName":"NYC"}}'
+        '"locationName":"Remote"}}'
         '</script></body></html>'
     )
     out = extract_jd_payload(ashby_html, source_site="ashby")
@@ -160,7 +160,7 @@ def test_parse_claude_response_builds_parsed_job_from_json():
         "company_name": "Anthropic",
         "company_domain": "anthropic.com",
         "role_title": "GTM Engineer",
-        "location": "New York, NY",
+        "location": "Remote",
         "jd_body": "We're hiring a GTM engineer to build pipeline automation.",
         "posted_date": "2026-04-15",
         "recruiter_name": None,
@@ -170,7 +170,7 @@ def test_parse_claude_response_builds_parsed_job_from_json():
     assert result.company_name == "Anthropic"
     assert result.company_domain == "anthropic.com"
     assert result.role_title == "GTM Engineer"
-    assert result.location == "New York, NY"
+    assert result.location == "Remote"
     assert "GTM engineer" in result.jd_body
     assert result.recruiter_name is None
     assert result.job_url == "https://example.com/role"

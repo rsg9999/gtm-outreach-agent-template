@@ -4,7 +4,7 @@ Guidance for Claude Code when working with this repo (as a friend's working copy
 
 ## What this is
 
-Local CLI agent that automates job-search outreach: parse a job/LinkedIn-post URL, find 3-4 contacts via Clay, draft emails + LinkedIn surfaces in the user's voice, stage as Gmail drafts, log to a Google Sheet. Step 7 (send/reply loop) and Step 8 (launchd) are not yet built — see status checklist in [README.md](README.md).
+Local CLI agent that automates job-search outreach: parse a job/LinkedIn-post URL, find 3-4 contacts via Clay, draft emails + LinkedIn surfaces in the user's voice, stage as Gmail drafts, log to a Google Sheet. Step 7 Phase 1 (manual-send detection + pooled follow-ups, via `run-loop`) is built; Step 7 reply-intelligence (Phase 2) and Step 8 (launchd) are not yet built — see status checklist in [README.md](README.md).
 
 ## Commands
 
@@ -19,6 +19,9 @@ uv run apply doctor                           # diagnostic checks
 uv run apply run <url> [<url>]                # Phase 1 (parse + state)
 uv run apply run --resume <run_id>            # Phase 3 (draft + stage)
 uv run apply run --resume <run_id> --dry-run  # Phase 3 without Gmail/Sheets writes
+uv run run-loop                 # Step 7: one tick (detect manual sends, stage follow-ups; never sends)
+uv run run-loop --dry-run       # print planned writes, change nothing
+uv run run-loop --init-headers  # add the 9 Step 7 columns to the tab
 ```
 
 CLI entrypoint is wired in [pyproject.toml](pyproject.toml): `apply` → `src.apply:main`.
