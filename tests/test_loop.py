@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.lib.models import StagedRow
+from src.lib.models import InboundMessage, StagedRow
 from src.lib.send_detect import SendEvent
 import src.loop as loop_mod
 from src.loop import record_send_fields, followup_due, followup_step
@@ -85,6 +85,7 @@ def _patch_loop(monkeypatch, rows, *, detector_event=None, detector_exc=None):
     """Patch config, queue read, gmail service, detector, pool, and capture update_row calls."""
     cfg = type("C", (), {
         "followup_1_days": 4, "followup_2_days": 9, "enable_followups": True,
+        "enable_reply_tracking": False, "enable_reply_drafts": False, "ooo_defer_days": 5,
         "step7_sheet_tab": "Outreach", "sheet_tab_name": "Outreach",
     })()
     monkeypatch.setattr(loop_mod, "load_config", lambda: cfg)
@@ -165,3 +166,62 @@ def test_tick_skips_terminal_rows(monkeypatch):
     updates, staged = _patch_loop(monkeypatch, [(2, _row(status="Replied", replied=True))], detector_event=None)
     loop_mod.run_tick(now=datetime(2026, 5, 6, 9, 0), dry_run=False)
     assert updates == [] and staged == []
+
+
+# --- Task 8: reply handling in run_tick -------------------------------------
+
+def _reply_row(**over):
+    # StagedRow is pydantic; date_added/company/role/job_url/contact_name/title are required.
+    base = dict(date_added=datetime(2026, 5, 28, 9, 0), company="Acme", role="growth eng",
+                job_url="https://example.com/job", contact_name="Jane", title="Head of Growth",
+                email="jane@acme.example", status="Email 1 Sent", gmail_thread_id="T1",
+                gmail_subject="the role", email_1_sent=datetime(2026, 6, 1, 8, 0))
+    base.update(over)
+    return StagedRow(**base)
+
+
+def _reply_cfg(**over):
+    c = loop_mod.load_config()
+    import dataclasses
+    return dataclasses.replace(c, **over)
+
+
+def test_genuine_reply_sets_replied_and_stages_draft(monkeypatch):
+    row = _reply_row()
+    inbound = InboundMessage(sender="Jane <jane@acme.example>", subject="Re: the role",
+                             headers={"from": "jane@acme.example"}, body="What times work?",
+                             internal_date_ms=1_700_000_000_000)
+    monkeypatch.setattr(loop_mod, "get_latest_inbound", lambda *a, **k: inbound)
+    monkeypatch.setattr(loop_mod, "classify_inbound", lambda m: "genuine")
+    monkeypatch.setattr(loop_mod, "generate_reply", lambda **k: "Tuesday works great, sending an invite now. Talk soon.")
+    monkeypatch.setattr(loop_mod, "create_reply_draft", lambda **k: "DRAFT123")
+    cfg = _reply_cfg(enable_reply_tracking=True, enable_reply_drafts=True)
+    fields = loop_mod._handle_inbound(row, cfg, service=object(), now=datetime(2026, 6, 2, 9, 0))
+    assert fields["Replied?"] is True
+    assert "Reply Date" in fields
+    assert fields["Reply Draft ID"] == "DRAFT123"
+
+
+def test_bounce_flags_without_replied(monkeypatch):
+    row = _reply_row()
+    inbound = InboundMessage(sender="mailer-daemon@acme.example", subject="Delivery Status Notification (Failure)",
+                             headers={"from": "mailer-daemon@acme.example"}, body="failed", internal_date_ms=1)
+    monkeypatch.setattr(loop_mod, "get_latest_inbound", lambda *a, **k: inbound)
+    monkeypatch.setattr(loop_mod, "classify_inbound", lambda m: "bounce")
+    cfg = _reply_cfg(enable_reply_tracking=True)
+    fields = loop_mod._handle_inbound(row, cfg, service=object(), now=datetime(2026, 6, 2))
+    assert fields.get("Step7 Error", "").startswith("bounce")
+    assert "Replied?" not in fields
+
+
+def test_ooo_defers_next_action_date(monkeypatch):
+    row = _reply_row()
+    inbound = InboundMessage(sender="Jane <jane@acme.example>", subject="Automatic reply",
+                             headers={"from": "jane@acme.example", "auto-submitted": "auto-replied"},
+                             body="I am out, back on June 9.", internal_date_ms=1)
+    monkeypatch.setattr(loop_mod, "get_latest_inbound", lambda *a, **k: inbound)
+    monkeypatch.setattr(loop_mod, "classify_inbound", lambda m: "auto_reply")
+    cfg = _reply_cfg(enable_reply_tracking=True, ooo_defer_days=5)
+    fields = loop_mod._handle_inbound(row, cfg, service=object(), now=datetime(2026, 6, 2, 9, 0))
+    assert fields["Next Action Date"].date().isoformat() == "2026-06-10"  # June 9 + 1 day
+    assert "Replied?" not in fields
