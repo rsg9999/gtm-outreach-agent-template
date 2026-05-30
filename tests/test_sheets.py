@@ -11,6 +11,7 @@ from src.lib.sheets import (
     _row_to_values,
     append_row,
     ensure_headers,
+    ensure_step7_headers,
 )
 
 
@@ -156,3 +157,45 @@ def test_row_to_values_maps_step7_fields():
     assert values[SHEET_HEADERS.index("Follow-up Sent?")] == "Yes"
     assert "2026-05-10" in values[SHEET_HEADERS.index("Follow-up Date")]
     assert len(values) == len(SHEET_HEADERS)
+
+
+# --------------------------------------------------------------------------- #
+# ensure_step7_headers                                                         #
+# --------------------------------------------------------------------------- #
+
+def test_ensure_step7_headers_writes_full_header_when_missing(monkeypatch):
+    fake_service = MagicMock()
+    # Tab currently has only the legacy first 18 headers.
+    fake_service.spreadsheets().values().get().execute.return_value = {
+        "values": [list(SHEET_HEADERS[:18])]
+    }
+    captured = {}
+
+    def fake_update(spreadsheetId, range, valueInputOption, body):
+        captured["body"] = body
+        return MagicMock(execute=lambda: {"updatedRange": "x"})
+
+    fake_service.spreadsheets().values().update.side_effect = fake_update
+    monkeypatch.setattr("src.lib.sheets._get_sheets_service", lambda: fake_service)
+    monkeypatch.setattr(
+        "src.lib.sheets.load_config",
+        lambda: type("C", (), {"sheet_id": "abc", "sheet_tab_name": "Outreach", "step7_sheet_tab": "Outreach"})(),
+    )
+    ensure_step7_headers()
+    assert captured["body"]["values"] == [list(SHEET_HEADERS)]
+
+
+def test_ensure_step7_headers_noop_when_already_full(monkeypatch):
+    fake_service = MagicMock()
+    fake_service.spreadsheets().values().get().execute.return_value = {
+        "values": [list(SHEET_HEADERS)]
+    }
+    called = {"yes": False}
+    fake_service.spreadsheets().values().update.side_effect = lambda **kw: called.update(yes=True)
+    monkeypatch.setattr("src.lib.sheets._get_sheets_service", lambda: fake_service)
+    monkeypatch.setattr(
+        "src.lib.sheets.load_config",
+        lambda: type("C", (), {"sheet_id": "abc", "sheet_tab_name": "Outreach", "step7_sheet_tab": "Outreach"})(),
+    )
+    ensure_step7_headers()
+    assert not called["yes"]
