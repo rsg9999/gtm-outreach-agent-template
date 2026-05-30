@@ -13,7 +13,7 @@ from googleapiclient.discovery import build
 
 from src.lib.config import load_config
 from src.lib.google_auth import load_credentials
-from src.lib.models import Contact, EmailDraft
+from src.lib.models import Contact, EmailDraft, InboundMessage
 
 
 def _plain_to_html(body: str) -> str:
@@ -217,3 +217,56 @@ def create_reply_draft(
     draft_id = result["id"]
     log.info("Gmail follow-up reply draft staged: id=%s thread=%s to=%s", draft_id, thread_id, to)
     return draft_id
+
+
+def _extract_text_body(payload: dict) -> str:
+    """Decode the text/plain body from a Gmail message payload (full format)."""
+    def _decode(b64data: str) -> str:
+        return base64.urlsafe_b64decode(b64data.encode("ascii")).decode("utf-8", errors="replace")
+
+    parts = payload.get("parts")
+    if parts:
+        for part in parts:
+            if part.get("mimeType") == "text/plain":
+                data = part.get("body", {}).get("data")
+                if data:
+                    return _decode(data)
+        # nested multipart: recurse into the first part that has its own parts
+        for part in parts:
+            if part.get("parts"):
+                nested = _extract_text_body(part)
+                if nested:
+                    return nested
+        return ""
+    data = payload.get("body", {}).get("data")
+    return _decode(data) if data else ""
+
+
+def get_message_body(message_id: str, service=None) -> tuple[str, int]:
+    """Fetch one message in full format; return (decoded text/plain body, internalDate ms)."""
+    service = service or _get_gmail_service()
+    resp = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    return _extract_text_body(resp["payload"]), int(resp["internalDate"])
+
+
+def get_latest_inbound(thread_id: str, our_address: str, service=None) -> InboundMessage | None:
+    """Return the most recent thread message whose From is NOT our_address, or None."""
+    service = service or _get_gmail_service()
+    resp = service.users().threads().get(userId="me", id=thread_id, format="full").execute()
+    ours = our_address.lower()
+    inbound = [
+        m for m in resp.get("messages", [])
+        if ours not in (_header(m["payload"].get("headers", []), "From") or "").lower()
+    ]
+    if not inbound:
+        return None
+    latest = max(inbound, key=lambda m: int(m["internalDate"]))
+    headers_list = latest["payload"].get("headers", [])
+    headers = {h["name"].lower(): h["value"] for h in headers_list}
+    return InboundMessage(
+        sender=_header(headers_list, "From") or "",
+        subject=_header(headers_list, "Subject") or "",
+        headers=headers,
+        body=_extract_text_body(latest["payload"]),
+        internal_date_ms=int(latest["internalDate"]),
+    )

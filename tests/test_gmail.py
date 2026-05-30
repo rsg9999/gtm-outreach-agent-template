@@ -235,3 +235,95 @@ def test_create_reply_draft_threads_and_returns_id(monkeypatch):
     assert draft_id == "fdraft_1"
     assert captured["body"]["message"]["threadId"] == "t1"
     assert "raw" in captured["body"]["message"]
+
+
+# --------------------------------------------------------------------------- #
+# Step 7 Phase 2: get_message_body + get_latest_inbound                        #
+# --------------------------------------------------------------------------- #
+
+from src.lib import gmail  # noqa: E402
+from src.lib.models import InboundMessage  # noqa: E402
+
+
+def _b64(s: str) -> str:
+    return base64.urlsafe_b64encode(s.encode("utf-8")).decode("ascii")
+
+
+class _FakeThreads:
+    def __init__(self, resp):
+        self._resp = resp
+    def get(self, **kwargs):
+        class _Exec:
+            def __init__(self, r): self._r = r
+            def execute(self): return self._r
+        return _Exec(self._resp)
+
+
+class _FakeUsers:
+    def __init__(self, thread_resp):
+        self._thread_resp = thread_resp
+    def threads(self):
+        return _FakeThreads(self._thread_resp)
+
+
+class _FakeService:
+    def __init__(self, thread_resp):
+        self._u = _FakeUsers(thread_resp)
+    def users(self):
+        return self._u
+
+
+def _msg(msg_id, frm, subject, body, internal_ms, extra_headers=None):
+    headers = [
+        {"name": "From", "value": frm},
+        {"name": "Subject", "value": subject},
+    ]
+    for k, v in (extra_headers or {}).items():
+        headers.append({"name": k, "value": v})
+    return {
+        "id": msg_id,
+        "threadId": "T1",
+        "internalDate": str(internal_ms),
+        "payload": {"headers": headers, "mimeType": "text/plain", "body": {"data": _b64(body)}},
+    }
+
+
+def test_get_latest_inbound_picks_newest_not_from_us():
+    thread = {"messages": [
+        _msg("m1", "me@example.com", "Re: the role", "my outgoing", 1000),
+        _msg("m2", "Jane <jane@acme.example>", "Re: the role", "Sounds good, send times", 3000),
+        _msg("m3", "me@example.com", "Re: the role", "following up", 2000),
+    ]}
+    svc = _FakeService(thread)
+    inbound = gmail.get_latest_inbound("T1", "me@example.com", service=svc)
+    assert isinstance(inbound, InboundMessage)
+    assert inbound.sender == "Jane <jane@acme.example>"
+    assert inbound.body == "Sounds good, send times"
+    assert inbound.internal_date_ms == 3000
+    assert inbound.headers["subject"] == "Re: the role"
+
+
+def test_get_latest_inbound_returns_none_when_only_our_messages():
+    thread = {"messages": [_msg("m1", "me@example.com", "the role", "hi", 1000)]}
+    svc = _FakeService(thread)
+    assert gmail.get_latest_inbound("T1", "me@example.com", service=svc) is None
+
+
+def test_get_message_body_decodes_full_message():
+    one = _msg("m1", "jane@acme.example", "Re: the role", "Hello there friend", 4242)
+
+    class _Msgs:
+        def get(self, **kwargs):
+            class _Exec:
+                def execute(self_inner): return one
+            return _Exec()
+
+    class _U:
+        def messages(self): return _Msgs()
+
+    class _S:
+        def users(self): return _U()
+
+    body, ms = gmail.get_message_body("m1", service=_S())
+    assert body == "Hello there friend"
+    assert ms == 4242
