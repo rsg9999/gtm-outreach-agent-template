@@ -40,6 +40,8 @@ class Config:
     google_token_path: Path
     sheet_id: str
     sheet_tab_name: str
+    step7_sheet_tab: str
+    enable_followups: bool
 
     slack_webhook_url: str
 
@@ -90,6 +92,8 @@ def load_config() -> Config:
         google_token_path=_env_path("GOOGLE_TOKEN_PATH", "credentials/token.json"),
         sheet_id=_env("SHEET_ID"),
         sheet_tab_name=_env("SHEET_TAB_NAME", "Outreach"),
+        step7_sheet_tab=_env("STEP7_SHEET_TAB", "") or _env("SHEET_TAB_NAME", "Outreach"),
+        enable_followups=_env_bool("ENABLE_FOLLOWUPS", True),
         slack_webhook_url=_env("SLACK_WEBHOOK_URL"),
         sender_name=_env("SENDER_NAME", ""),
         sender_email=_env("SENDER_EMAIL"),
