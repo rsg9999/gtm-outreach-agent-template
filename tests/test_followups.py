@@ -32,3 +32,11 @@ def test_select_bump_varies_across_contacts():
     pool = ["a", "b", "c", "d", "e", "f", "g", "h"]
     picks = {select_bump(pool, f"person{i}@x.example", "followup_1") for i in range(8)}
     assert len(picks) > 1  # not all identical
+
+
+def test_example_pool_file_parses_nonempty():
+    from src.lib.config import REPO_ROOT
+    from src.lib.profile import parse_followup_pools
+    text = (REPO_ROOT / "Profile.example" / "thread_followups.md").read_text(encoding="utf-8")
+    pools = parse_followup_pools(text)
+    assert pools["followup_1"] and pools["followup_2"]
