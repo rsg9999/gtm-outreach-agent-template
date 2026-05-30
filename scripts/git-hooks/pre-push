@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# ============================================================================
+#  🔒 PRIVACY GUARDRAIL — pre-push hook  (do NOT bypass with --no-verify)
+# ----------------------------------------------------------------------------
+#  This repo is PUBLIC and the maintainer is privacy-strict. The earlier leak
+#  was not in the code — it was in commit *author metadata* (a real name + a
+#  <user>@<device>.local email). A content scanner can't catch that, so this
+#  hook inspects WHO authored every commit being pushed, not just what's in it.
+#
+#  It BLOCKS the push if any commit in the push range has:
+#    1. an author/committer email on a local device domain
+#       (.local / .lan / .localdomain / .home / .internal), or
+#    2. an author/committer name or email matching .privacy-denylist.txt
+#       (your real name, hostname, etc. — gitignored, per-machine), or
+#    3. content flagged by scripts/pre_publish_scan.py.
+#
+#  Activate (once per clone):  git config core.hooksPath scripts/git-hooks
+# ============================================================================
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+DENYLIST="$ROOT/.privacy-denylist.txt"
+ZERO="0000000000000000000000000000000000000000"
+DEVICE_RE='\.local$|\.lan$|\.localdomain$|\.home$|\.internal$'
+fail=0
+
+# --- Figure out which commits are actually being pushed (from git's stdin) ---
+ranges=()
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$ZERO" ] && continue            # branch deletion: nothing to scan
+  if [ "$remote_sha" = "$ZERO" ]; then
+    ranges+=("$local_sha" "--not" "--remotes")      # new branch: commits not on any remote
+  else
+    ranges+=("$remote_sha..$local_sha")             # update: only the new commits
+  fi
+done
+
+# Manual invocation (no stdin): scan local commits not yet on a remote.
+if [ ${#ranges[@]} -eq 0 ]; then
+  ranges=("HEAD" "--not" "--remotes")
+fi
+
+# --- Checks 1 & 2: author/committer identity on every pushed commit ----------
+idents="$(git log "${ranges[@]}" --format='%an%n%ae%n%cn%n%ce' 2>/dev/null | sort -u || true)"
+
+deny_patterns=""
+if [ -f "$DENYLIST" ]; then
+  deny_patterns="$(grep -vE '^[[:space:]]*(#|$)' "$DENYLIST" 2>/dev/null || true)"
+fi
+
+while IFS= read -r ident; do
+  [ -z "$ident" ] && continue
+  if printf '%s' "$ident" | grep -qiE "$DEVICE_RE"; then
+    echo "BLOCKED: commit identity '$ident' is a local device address (.local/.lan/…)." >&2
+    fail=1
+  fi
+  if [ -n "$deny_patterns" ] && printf '%s\n' "$ident" | grep -qiFf <(printf '%s' "$deny_patterns"); then
+    echo "BLOCKED: commit identity '$ident' matches .privacy-denylist.txt." >&2
+    fail=1
+  fi
+done <<< "$idents"
+
+# --- Check 3: content scan (reuses the existing pre-publish scanner) ---------
+if [ -f "$ROOT/scripts/pre_publish_scan.py" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    uv run python "$ROOT/scripts/pre_publish_scan.py" >&2 || fail=1
+  else
+    python3 "$ROOT/scripts/pre_publish_scan.py" >&2 || fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "🔒 PRIVACY GUARDRAIL: push blocked. Fix the leak above before pushing." >&2
+  echo "   Identity must be: rsg9999 <146885908+rsg9999@users.noreply.github.com>." >&2
+  echo "   Do NOT bypass with --no-verify." >&2
+  exit 1
+fi
+exit 0

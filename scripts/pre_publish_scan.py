@@ -46,8 +46,9 @@ FORBIDDEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@([A-Z0-9.-]+\.[A-Z]{2,}|[A-Z0-9.-]+\.example)\b", re.IGNORECASE)
 # anthropic.com is allowed solely for the "Co-Authored-By: ... <noreply@anthropic.com>"
 # trailer that appears verbatim in committed plan/spec docs — it is the AI co-author
-# address, not personal data.
-ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org", "example.net", "example.edu", "example.ai", "acme.example", "anthropic.com"}
+# address, not personal data. users.noreply.github.com is GitHub's pseudonymous no-reply
+# domain (the maintainer's commit identity) — non-personal by design.
+ALLOWED_EMAIL_DOMAINS = {"example.com", "example.org", "example.net", "example.edu", "example.ai", "acme.example", "anthropic.com", "users.noreply.github.com"}
 
 
 # File patterns that should NEVER be committed. These are checked at the path level.
