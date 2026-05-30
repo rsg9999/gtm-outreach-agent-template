@@ -133,3 +133,26 @@ def test_append_row_calls_sheets_append_with_values(monkeypatch):
     assert "values" in captured["body"]
     assert len(captured["body"]["values"]) == 1
     assert len(captured["body"]["values"][0]) == len(SHEET_HEADERS)
+
+
+def test_headers_include_step7_columns():
+    for col in (
+        "Gmail Message ID", "Gmail Subject", "Gmail Thread ID", "Last Gmail Message ID",
+        "Followup Draft ID", "Reply Draft ID", "Step7 Error", "Follow-up Sent?", "Follow-up Date",
+    ):
+        assert col in SHEET_HEADERS
+
+
+def test_row_to_values_maps_step7_fields():
+    from datetime import datetime
+    row = _row()
+    row.gmail_message_id = "m1"
+    row.gmail_thread_id = "t1"
+    row.followup_sent = True
+    row.followup_date = datetime(2026, 5, 10, 9, 0)
+    values = _row_to_values(row)
+    assert values[SHEET_HEADERS.index("Gmail Message ID")] == "m1"
+    assert values[SHEET_HEADERS.index("Gmail Thread ID")] == "t1"
+    assert values[SHEET_HEADERS.index("Follow-up Sent?")] == "Yes"
+    assert "2026-05-10" in values[SHEET_HEADERS.index("Follow-up Date")]
+    assert len(values) == len(SHEET_HEADERS)
