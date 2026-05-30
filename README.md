@@ -79,7 +79,8 @@ Profile/
 
 ## What v1 does NOT do
 
-- Step 7 (send/reply/follow-up loop) and Step 8 (launchd scheduling) are deferred to v2.
+- Step 7 Phase 1 (manual-send detection + pooled follow-ups) is built; reply tracking,
+  OOO/bounce handling, LLM reply drafts, and Step 8 (launchd) are still deferred.
 - LinkedIn auto-send (you copy/paste DMs from the Sheet).
 - Multi-account email rotation.
 - Auto-apply to jobs.

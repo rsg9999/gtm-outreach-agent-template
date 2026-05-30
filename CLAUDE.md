@@ -19,6 +19,9 @@ uv run apply doctor                           # diagnostic checks
 uv run apply run <url> [<url>]                # Phase 1 (parse + state)
 uv run apply run --resume <run_id>            # Phase 3 (draft + stage)
 uv run apply run --resume <run_id> --dry-run  # Phase 3 without Gmail/Sheets writes
+uv run run-loop                 # Step 7: one tick (detect manual sends, stage follow-ups; never sends)
+uv run run-loop --dry-run       # print planned writes, change nothing
+uv run run-loop --init-headers  # add the 9 Step 7 columns to the tab
 ```
 
 CLI entrypoint is wired in [pyproject.toml](pyproject.toml): `apply` → `src.apply:main`.
