@@ -37,6 +37,15 @@ SHEET_HEADERS = (
     "LinkedIn DM",
     "LinkedIn InMail Subject",
     "LinkedIn InMail Body",
+    "Gmail Message ID",
+    "Gmail Subject",
+    "Gmail Thread ID",
+    "Last Gmail Message ID",
+    "Followup Draft ID",
+    "Reply Draft ID",
+    "Step7 Error",
+    "Follow-up Sent?",
+    "Follow-up Date",
 )
 
 
@@ -76,6 +85,15 @@ def _row_to_values(row: StagedRow) -> list[str]:
         "LinkedIn DM": row.linkedin_dm or "",
         "LinkedIn InMail Subject": row.linkedin_inmail_subject or "",
         "LinkedIn InMail Body": row.linkedin_inmail_body or "",
+        "Gmail Message ID": row.gmail_message_id or "",
+        "Gmail Subject": row.gmail_subject or "",
+        "Gmail Thread ID": row.gmail_thread_id or "",
+        "Last Gmail Message ID": row.last_gmail_message_id or "",
+        "Followup Draft ID": row.followup_draft_id or "",
+        "Reply Draft ID": row.reply_draft_id or "",
+        "Step7 Error": row.step7_error,
+        "Follow-up Sent?": "Yes" if row.followup_sent else "No",
+        "Follow-up Date": _iso(row.followup_date),
     }
     return [cells_by_header[h] for h in SHEET_HEADERS]
 
