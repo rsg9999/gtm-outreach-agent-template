@@ -1,6 +1,6 @@
 [project]
 name = "gtm-outreach-agent"
-version = "0.1.0"
+version = "0.2.0"
 authors = [{name = "rsg9999"}]
 description = "Local CLI agent that researches jobs, drafts personalized outreach in your voice, stages Gmail drafts, and logs to Google Sheets."
 requires-python = ">=3.11"
