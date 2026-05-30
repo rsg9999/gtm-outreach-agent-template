@@ -115,6 +115,33 @@ def ensure_headers() -> None:
     log.info("Sheet headers written: %d columns", len(SHEET_HEADERS))
 
 
+def _step7_tab(cfg) -> str:
+    return getattr(cfg, "step7_sheet_tab", "") or cfg.sheet_tab_name
+
+
+def ensure_step7_headers() -> None:
+    """Ensure the Step 7 tab's header row contains all SHEET_HEADERS (extends legacy tabs).
+
+    Writes only row 1, so existing data rows are untouched; new columns become blank
+    for them. Idempotent: a no-op when row 1 already equals SHEET_HEADERS.
+    """
+    cfg = load_config()
+    service = _get_sheets_service()
+    tab = _step7_tab(cfg)
+    rng = f"{tab}!1:1"
+    resp = service.spreadsheets().values().get(spreadsheetId=cfg.sheet_id, range=rng).execute()
+    current = (resp.get("values") or [[]])[0]
+    if current == list(SHEET_HEADERS):
+        return
+    service.spreadsheets().values().update(
+        spreadsheetId=cfg.sheet_id,
+        range=rng,
+        valueInputOption="RAW",
+        body={"values": [list(SHEET_HEADERS)]},
+    ).execute()
+    log.info("Step 7 headers ensured on tab %r: %d columns", tab, len(SHEET_HEADERS))
+
+
 def append_row(row: StagedRow) -> int:
     """Append a row, return the 1-indexed row number on the sheet."""
     cfg = load_config()
