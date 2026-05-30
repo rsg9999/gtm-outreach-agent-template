@@ -42,6 +42,10 @@ class Config:
     sheet_tab_name: str
     step7_sheet_tab: str
     enable_followups: bool
+    enable_reply_tracking: bool
+    enable_reply_drafts: bool
+    reply_use_llm: bool
+    ooo_defer_days: int
 
     slack_webhook_url: str
 
@@ -94,6 +98,10 @@ def load_config() -> Config:
         sheet_tab_name=_env("SHEET_TAB_NAME", "Outreach"),
         step7_sheet_tab=_env("STEP7_SHEET_TAB", "") or _env("SHEET_TAB_NAME", "Outreach"),
         enable_followups=_env_bool("ENABLE_FOLLOWUPS", True),
+        enable_reply_tracking=_env_bool("ENABLE_REPLY_TRACKING", True),
+        enable_reply_drafts=_env_bool("ENABLE_REPLY_DRAFTS", True),
+        reply_use_llm=_env_bool("REPLY_USE_LLM", True),
+        ooo_defer_days=int(_env("OOO_DEFER_DAYS", "5")),
         slack_webhook_url=_env("SLACK_WEBHOOK_URL"),
         sender_name=_env("SENDER_NAME", ""),
         sender_email=_env("SENDER_EMAIL"),
