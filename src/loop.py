@@ -140,7 +140,7 @@ def _handle_inbound(row: StagedRow, cfg, service, *, now: datetime) -> dict:
     if kind == "auto_reply":
         ret = parse_return_date(inbound.body, today=now.date())
         if ret is None:
-            return {"Next Action Date": now + timedelta(days=cfg.ooo_defer_days)}
+            return {"Next Action Date": reply_dt + timedelta(days=cfg.ooo_defer_days)}
         if (ret - now.date()).days > _OOO_MAX_DEFER_DAYS:
             return {"Step7 Error": f"OOO >90d (returns {ret.isoformat()}): manual review"}
         return {"Next Action Date": datetime.combine(ret + timedelta(days=1), datetime.min.time())}

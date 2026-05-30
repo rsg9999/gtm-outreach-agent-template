@@ -225,3 +225,157 @@ def test_ooo_defers_next_action_date(monkeypatch):
     fields = loop_mod._handle_inbound(row, cfg, service=object(), now=datetime(2026, 6, 2, 9, 0))
     assert fields["Next Action Date"].date().isoformat() == "2026-06-10"  # June 9 + 1 day
     assert "Replied?" not in fields
+
+
+# ---------------------------------------------------------------------------
+# run_tick integration tests (Issue 2) — real classify_inbound + parse_return_date
+# ---------------------------------------------------------------------------
+
+def _patch_loop_reply(monkeypatch, rows, inbound, *, ooo_defer_days=5,
+                      enable_reply_drafts=False, generate_reply_fn=None,
+                      create_reply_draft_fn=None):
+    """Like _patch_loop but with enable_reply_tracking=True and get_latest_inbound patched.
+    Uses REAL classify_inbound and REAL parse_return_date.
+    Returns (updates, staged) capture lists."""
+    import dataclasses
+    base_cfg = loop_mod.load_config()
+    cfg = dataclasses.replace(
+        base_cfg,
+        enable_reply_tracking=True,
+        enable_followups=True,
+        enable_reply_drafts=enable_reply_drafts,
+        ooo_defer_days=ooo_defer_days,
+        followup_1_days=4,
+        followup_2_days=9,
+    )
+    monkeypatch.setattr(loop_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(loop_mod, "_gmail_service", lambda: object())
+    monkeypatch.setattr(loop_mod, "read_queue", lambda: list(rows))
+    monkeypatch.setattr(loop_mod, "load_followup_pools",
+                        lambda: {"followup_1": ["bump a"], "followup_2": ["final a"]})
+    monkeypatch.setattr(loop_mod, "get_draft_subject",
+                        lambda did, service=None: "the growth role at Acme")
+    monkeypatch.setattr(loop_mod, "get_latest_inbound", lambda *a, **kw: inbound)
+
+    class _NullDet:
+        def detect(self, row, service):
+            return None
+    monkeypatch.setattr(loop_mod, "make_detector", lambda: _NullDet())
+
+    updates = []
+    monkeypatch.setattr(loop_mod, "update_row", lambda n, fields: updates.append((n, fields)))
+    staged = []
+    if create_reply_draft_fn is None:
+        monkeypatch.setattr(loop_mod, "create_reply_draft",
+                            lambda **kw: staged.append(kw) or "fdraft_new")
+    else:
+        monkeypatch.setattr(loop_mod, "create_reply_draft", create_reply_draft_fn)
+    if generate_reply_fn is not None:
+        monkeypatch.setattr(loop_mod, "generate_reply", generate_reply_fn)
+    return updates, staged
+
+
+def test_ooo_no_date_idempotent_across_two_ticks(monkeypatch):
+    """Reproduces Issue 1: OOO with no parseable date must anchor to inbound timestamp,
+    NOT to now, so the Next Action Date is identical on every tick."""
+    # inbound_date_ms = 2026-06-01 08:00 UTC; body has no parseable return date
+    inbound_ts_ms = int(datetime(2026, 6, 1, 8, 0).timestamp() * 1000)
+    inbound = InboundMessage(
+        sender="Jane <jane@acme.example>",
+        subject="Automatic reply: out of office",
+        headers={"from": "jane@acme.example", "auto-submitted": "auto-replied"},
+        body="Out of office, back soon.",  # no parseable date
+        internal_date_ms=inbound_ts_ms,
+    )
+    row = _reply_row(next_action_date=datetime(2026, 6, 5, 8, 0))
+
+    T1 = datetime(2026, 6, 3, 9, 0)
+    T2 = datetime(2026, 6, 8, 9, 0)  # 5 days later
+
+    # Tick 1
+    updates_t1, _ = _patch_loop_reply(monkeypatch, [(2, row)], inbound, ooo_defer_days=7)
+    loop_mod.run_tick(now=T1, dry_run=False)
+    merged_t1 = {k: v for _, f in updates_t1 for k, v in f.items()}
+    date_t1 = merged_t1.get("Next Action Date")
+    assert date_t1 is not None, "Tick 1 must write Next Action Date"
+
+    # Tick 2 (same row, same inbound — OOO still the latest inbound)
+    updates_t2, _ = _patch_loop_reply(monkeypatch, [(2, row)], inbound, ooo_defer_days=7)
+    loop_mod.run_tick(now=T2, dry_run=False)
+    merged_t2 = {k: v for _, f in updates_t2 for k, v in f.items()}
+    date_t2 = merged_t2.get("Next Action Date")
+    assert date_t2 is not None, "Tick 2 must write Next Action Date"
+
+    assert date_t1 == date_t2, (
+        f"OOO no-date defer is not idempotent: T1 wrote {date_t1}, T2 wrote {date_t2}"
+    )
+
+
+def test_run_tick_genuine_reply_sets_replied_no_followup(monkeypatch):
+    """run_tick: genuine reply -> Replied?=True written; no follow-up staged that tick."""
+    inbound = InboundMessage(
+        sender="Jane <jane@acme.example>", subject="Re: the role",
+        headers={"from": "jane@acme.example"},  # no auto-submitted -> genuine
+        body="Sounds great, let's connect.",
+        internal_date_ms=int(datetime(2026, 6, 2, 10, 0).timestamp() * 1000),
+    )
+    # Row is due for a follow-up (but genuine reply must block it)
+    row = _reply_row(next_action_date=datetime(2026, 6, 1, 8, 0))
+
+    updates, staged = _patch_loop_reply(
+        monkeypatch, [(2, row)], inbound,
+        enable_reply_drafts=False,
+        generate_reply_fn=lambda **k: "Happy to chat!",
+    )
+    loop_mod.run_tick(now=datetime(2026, 6, 3, 9, 0), dry_run=False)
+
+    merged = {k: v for _, f in updates for k, v in f.items()}
+    assert merged.get("Replied?") is True, "Replied? must be True for a genuine reply"
+    assert "Next Action Date" not in merged, "genuine reply must not re-schedule follow-up"
+    assert staged == [], "no follow-up draft should be staged when a genuine reply is detected"
+
+
+def test_run_tick_bounce_writes_error_does_not_set_replied(monkeypatch):
+    """run_tick: bounce -> Step7 Error written; Replied? not set; follow-up still due next tick."""
+    inbound = InboundMessage(
+        sender="mailer-daemon@example.com",
+        subject="Delivery Status Notification (Failure)",
+        headers={"from": "mailer-daemon@example.com"},
+        body="This message could not be delivered.",
+        internal_date_ms=int(datetime(2026, 6, 2, 10, 0).timestamp() * 1000),
+    )
+    # Row has no pending follow-up due, so we only assert the bounce fields
+    row = _reply_row(next_action_date=datetime(2026, 6, 10, 8, 0))  # due in the future
+
+    updates, staged = _patch_loop_reply(monkeypatch, [(2, row)], inbound)
+    loop_mod.run_tick(now=datetime(2026, 6, 3, 9, 0), dry_run=False)
+
+    merged = {k: v for _, f in updates for k, v in f.items()}
+    assert "bounce" in merged.get("Step7 Error", ""), "bounce must write Step7 Error"
+    assert "Replied?" not in merged, "bounce must NOT set Replied?"
+    assert staged == [], "no draft staged for a bounce row with future follow-up"
+
+
+def test_run_tick_reply_generation_error_leaves_row_unchanged(monkeypatch):
+    """run_tick: transient ReplyGenerationError -> update_row NOT called; row left for retry."""
+    from src.lib.reply_drafts import ReplyGenerationError
+
+    inbound = InboundMessage(
+        sender="Jane <jane@acme.example>", subject="Re: the role",
+        headers={"from": "jane@acme.example"},
+        body="Interested, let's talk.",
+        internal_date_ms=int(datetime(2026, 6, 2, 10, 0).timestamp() * 1000),
+    )
+    row = _reply_row()
+
+    def _fail_reply(**k):
+        raise ReplyGenerationError("Claude API timeout")
+
+    updates, staged = _patch_loop_reply(
+        monkeypatch, [(2, row)], inbound,
+        enable_reply_drafts=True,
+        generate_reply_fn=_fail_reply,
+    )
+    loop_mod.run_tick(now=datetime(2026, 6, 3, 9, 0), dry_run=False)
+
+    assert updates == [], "update_row must NOT be called when ReplyGenerationError is raised"
