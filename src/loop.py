@@ -37,6 +37,7 @@ def make_detector():
 
 _STEP_SENT_COLUMN = {"email_1": "Email 1 Sent", "followup_1": "Email 2 Sent", "followup_2": "Email 3 Sent"}
 _STEP_STATUS = {"email_1": "Email 1 Sent", "followup_1": "Follow-up 1 Sent", "followup_2": "Follow-up 2 Sent"}
+_STEP_LABEL = {"followup_1": "Send Follow-up 1", "followup_2": "Send Follow-up 2"}
 
 
 def record_send_fields(row: StagedRow, event: SendEvent, cfg) -> dict:
@@ -113,7 +114,7 @@ def _stage_followup_fields(row: StagedRow, pools: dict, service) -> dict:
         references=None,
         service=service,
     )
-    return {"Followup Draft ID": draft_id, "Next Action": f"Send {step.replace('_', ' ').title()}"}
+    return {"Followup Draft ID": draft_id, "Next Action": _STEP_LABEL[step]}
 
 
 def run_tick(*, now: datetime | None = None, dry_run: bool = False) -> None:
@@ -131,10 +132,13 @@ def run_tick(*, now: datetime | None = None, dry_run: bool = False) -> None:
             changed.update(_cache_subject_fields(row, service))
             event: SendEvent | None = detector.detect(row, service)
             if event is not None:
+                # A send was just detected; record it and schedule the next follow-up
+                # (written below). Do NOT also stage a follow-up this same tick — the
+                # row's in-memory next_action_date is still the prior (often past) value,
+                # and the next follow-up is by definition in the future. The next tick
+                # stages it once the row reflects the freshly-written Next Action Date.
                 changed.update(record_send_fields(row, event, cfg))
-                # reflect the send on the in-memory row so we don't also stage this tick
-                _apply_to_row(row, event)
-            if cfg.enable_followups and followup_due(row, now=now):
+            elif cfg.enable_followups and followup_due(row, now=now):
                 changed.update(_stage_followup_fields(row, pools, service))
         except Exception as exc:  # isolate the row, keep the tick going
             changed = {"Step7 Error": f"{type(exc).__name__}: {exc}"[:300]}
@@ -144,18 +148,6 @@ def run_tick(*, now: datetime | None = None, dry_run: bool = False) -> None:
                 click.echo(f"[dry-run] row {row_number}: {changed}")
             else:
                 update_row(row_number, changed)
-
-
-def _apply_to_row(row: StagedRow, event: SendEvent) -> None:
-    """Mirror a detected send onto the in-memory row so follow-up logic sees fresh state."""
-    setattr(row, {"email_1": "email_1_sent", "followup_1": "email_2_sent", "followup_2": "email_3_sent"}[event.step], event.sent_at)
-    if event.step == "email_1":
-        row.gmail_message_id = event.message_id
-        row.gmail_thread_id = event.thread_id
-        row.gmail_draft_id = None
-    else:
-        row.followup_draft_id = None
-    row.last_gmail_message_id = event.message_id
 
 
 @click.command()
