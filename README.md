@@ -59,6 +59,18 @@ You can also re-run `apply doctor` any time to check what's wired:
 uv run apply doctor
 ```
 
+## Step 7 (optional): the send/reply loop
+
+Once drafts are staged, `run-loop` tracks the emails **you** send by hand and stages follow-ups for you to review. **It never sends and never auto-replies — you send every email yourself.**
+
+```bash
+uv run run-loop --init-headers   # one-time: add the Step 7 columns to your Sheet tab
+uv run run-loop --dry-run        # show what it would do, write nothing
+uv run run-loop                  # one tick: detect manual sends, stage due follow-ups
+```
+
+Point `STEP7_SHEET_TAB` at a test-copy of your tab while you trial it. Reply tracking, out-of-office/bounce handling, and LLM reply drafts arrive in a later release.
+
 ## How it stays in your voice
 
 The drafter reads `Profile/` on every email it generates:
@@ -77,10 +89,20 @@ Profile/
 
 [`Profile.example/`](Profile.example/) ships a polished fictional persona ("Alex Chen, PM-turned-founder") so you can see what good looks like before writing your own.
 
+## Updating to a new version
+
+Pulling new code never touches your gitignored `Profile/`, `.env`, or `state/`. To upgrade:
+
+```bash
+git pull && uv sync
+```
+
+Some releases need a one-time migration — [CHANGELOG.md](CHANGELOG.md) lists the steps per version (e.g. 0.2.0 adds the Step 7 loop, which needs `uv run run-loop --init-headers` plus a customized `Profile/thread_followups.md`). **Click Watch → Releases on the GitHub repo to get notified when a new version ships.**
+
 ## What v1 does NOT do
 
 - Step 7 Phase 1 (manual-send detection + pooled follow-ups) is built; reply tracking,
-  OOO/bounce handling, LLM reply drafts, and Step 8 (launchd) are still deferred.
+  out-of-office/bounce handling, LLM reply drafts, and Step 8 (launchd) are still deferred.
 - LinkedIn auto-send (you copy/paste DMs from the Sheet).
 - Multi-account email rotation.
 - Auto-apply to jobs.
