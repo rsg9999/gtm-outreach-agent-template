@@ -69,7 +69,7 @@ uv run run-loop --dry-run        # show what it would do, write nothing
 uv run run-loop                  # one tick: detect manual sends, stage due follow-ups
 ```
 
-Point `STEP7_SHEET_TAB` at a test-copy of your tab while you trial it. Reply tracking, out-of-office/bounce handling, and LLM reply drafts arrive in a later release.
+Point `STEP7_SHEET_TAB` at a test-copy of your tab while you trial it. It also detects genuine replies (stopping follow-ups), handles out-of-office and bounces, and stages a reply draft in your thread voice for you to review.
 
 ## How it stays in your voice
 
@@ -101,8 +101,8 @@ Some releases need a one-time migration — [CHANGELOG.md](CHANGELOG.md) lists t
 
 ## What v1 does NOT do
 
-- Step 7 Phase 1 (manual-send detection + pooled follow-ups) is built; reply tracking,
-  out-of-office/bounce handling, LLM reply drafts, and Step 8 (launchd) are still deferred.
+- Step 7 reply intelligence (reply tracking, out-of-office/bounce handling, LLM reply drafts) is
+  built; Step 8 (launchd auto-scheduling) is still deferred.
 - LinkedIn auto-send (you copy/paste DMs from the Sheet).
 - Multi-account email rotation.
 - Auto-apply to jobs.

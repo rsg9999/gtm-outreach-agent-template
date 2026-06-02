@@ -99,3 +99,12 @@ class StagedRow(BaseModel):
     step7_error: str = ""
     followup_sent: bool = False
     followup_date: Optional[datetime] = None
+
+
+class InboundMessage(BaseModel):
+    """The latest inbound (not-from-us) message in a thread, normalized for classification."""
+    sender: str                      # raw From header, e.g. 'Jane Doe <jane@acme.example>'
+    subject: str
+    headers: dict[str, str]          # header name (lowercased) -> value
+    body: str                        # decoded text/plain body
+    internal_date_ms: int            # Gmail internalDate (ms since epoch)

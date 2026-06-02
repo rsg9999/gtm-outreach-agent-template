@@ -2,6 +2,15 @@
 
 Guidance for Claude Code when working with this repo (as a friend's working copy of the template).
 
+## 🔒 PRIVACY GUARDRAIL (read first)
+
+This is a **public** repo and the maintainer is privacy-strict. Personal/device info must **never** reach GitHub — not in code, and not in commit metadata (the past leak was a real name + `<user>@<device>.local` author email, which a content scanner can't catch).
+
+- **Identity:** commit *only* as `rsg9999 <146885908+rsg9999@users.noreply.github.com>`. Never a real name, never a `*.local`/device-hostname email. The repo-local git config is pinned to this.
+- **Fixtures:** every fictional email in tests/docs uses a scanner-allowlisted domain — `@example.com` or `@acme.example` (never `@acme.com`/`@gmail.com`/a real-looking domain).
+- **Enforcement:** a committed pre-push hook ([scripts/git-hooks/pre-push](scripts/git-hooks/pre-push), wired via `core.hooksPath`) **blocks any push** whose commits carry a device/denylisted identity or whose content fails [scripts/pre_publish_scan.py](scripts/pre_publish_scan.py). **Never** bypass with `--no-verify`; fix the leak instead.
+- **New clone?** run `git config core.hooksPath scripts/git-hooks` once to activate the hook.
+
 ## What this is
 
 Local CLI agent that automates job-search outreach: parse a job/LinkedIn-post URL, find 3-4 contacts via Clay, draft emails + LinkedIn surfaces in the user's voice, stage as Gmail drafts, log to a Google Sheet. Step 7 Phase 1 (manual-send detection + pooled follow-ups, via `run-loop`) is built; Step 7 reply-intelligence (Phase 2) and Step 8 (launchd) are not yet built — see status checklist in [README.md](README.md).

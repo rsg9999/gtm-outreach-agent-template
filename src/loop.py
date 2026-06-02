@@ -9,14 +9,18 @@ from __future__ import annotations
 import logging
 import sys
 from datetime import datetime, timedelta
+from email.utils import parseaddr
 
 import click
 
+from src.lib.classify import classify_inbound
 from src.lib.config import load_config
 from src.lib.followups import select_bump
-from src.lib.gmail import create_reply_draft, get_draft_subject, _get_gmail_service
+from src.lib.gmail import create_reply_draft, get_draft_subject, get_latest_inbound, _get_gmail_service
 from src.lib.models import StagedRow
+from src.lib.ooo import parse_return_date
 from src.lib.profile import load_followup_pools
+from src.lib.reply_drafts import ReplyGenerationError, generate_reply
 from src.lib.send_detect import PollingSendDetector, SendEvent
 from src.lib.sheets import ensure_step7_headers, read_queue, update_row
 
@@ -117,6 +121,46 @@ def _stage_followup_fields(row: StagedRow, pools: dict, service) -> dict:
     return {"Followup Draft ID": draft_id, "Next Action": _STEP_LABEL[step]}
 
 
+_OOO_MAX_DEFER_DAYS = 90
+
+
+def _handle_inbound(row: StagedRow, cfg, service, *, now: datetime) -> dict:
+    """Classify the latest inbound message and return field changes. Empty dict = no action
+    (let follow-up logic run). May raise ReplyGenerationError (caller retries next tick)."""
+    inbound = get_latest_inbound(row.gmail_thread_id, cfg.sender_email, service=service)
+    if inbound is None:
+        return {}
+    kind = classify_inbound(inbound)
+    reply_dt = datetime.fromtimestamp(inbound.internal_date_ms / 1000)
+
+    if kind == "bounce":
+        msg = "bounce: address may be invalid"
+        return {} if row.step7_error == msg else {"Step7 Error": msg}
+
+    if kind == "auto_reply":
+        ret = parse_return_date(inbound.body, today=now.date())
+        if ret is None:
+            return {"Next Action Date": reply_dt + timedelta(days=cfg.ooo_defer_days)}
+        if (ret - now.date()).days > _OOO_MAX_DEFER_DAYS:
+            return {"Step7 Error": f"OOO >90d (returns {ret.isoformat()}): manual review"}
+        return {"Next Action Date": datetime.combine(ret + timedelta(days=1), datetime.min.time())}
+
+    # genuine
+    fields: dict = {}
+    if cfg.enable_reply_drafts and not row.reply_draft_id:
+        body = generate_reply(inbound_body=inbound.body,
+                              first_name=(row.contact_name or "there").split()[0])
+        to_addr = parseaddr(inbound.sender)[1] or row.email
+        draft_id = create_reply_draft(
+            thread_id=row.gmail_thread_id, to=to_addr,
+            subject=row.gmail_subject or row.role, body=body, service=service,
+        )
+        fields["Reply Draft ID"] = draft_id
+    fields["Replied?"] = True
+    fields["Reply Date"] = reply_dt
+    return fields
+
+
 def run_tick(*, now: datetime | None = None, dry_run: bool = False) -> None:
     now = now or datetime.now()
     cfg = load_config()
@@ -138,8 +182,20 @@ def run_tick(*, now: datetime | None = None, dry_run: bool = False) -> None:
                 # and the next follow-up is by definition in the future. The next tick
                 # stages it once the row reflects the freshly-written Next Action Date.
                 changed.update(record_send_fields(row, event, cfg))
-            elif cfg.enable_followups and followup_due(row, now=now):
-                changed.update(_stage_followup_fields(row, pools, service))
+            else:
+                inbound_fields: dict = {}
+                if (cfg.enable_reply_tracking and row.email_1_sent
+                        and not row.replied and row.gmail_thread_id):
+                    inbound_fields = _handle_inbound(row, cfg, service, now=now)
+                    changed.update(inbound_fields)
+                # Follow-up still runs unless a genuine reply landed (Replied?) or we deferred
+                # for an OOO (Next Action Date). A bounce flag does NOT stop the sequence.
+                blocked = "Replied?" in inbound_fields or "Next Action Date" in inbound_fields
+                if not blocked and cfg.enable_followups and followup_due(row, now=now):
+                    changed.update(_stage_followup_fields(row, pools, service))
+        except ReplyGenerationError:
+            log.info("row %d: transient reply-draft failure; will retry next tick", row_number)
+            continue
         except Exception as exc:  # isolate the row, keep the tick going
             changed = {"Step7 Error": f"{type(exc).__name__}: {exc}"[:300]}
             log.warning("row %d failed: %s", row_number, exc)
